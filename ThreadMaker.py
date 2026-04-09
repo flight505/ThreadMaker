@@ -1,21 +1,27 @@
-"""This file acts as the main module for this script."""
+"""ThreadMaker — Fusion 360 add-in for multi-start threads optimized for FDM 3D printing."""
 
-import traceback
+from . import commands
+from .lib import fusionAddInUtils as futil
 import adsk.core
-import adsk.fusion
-# import adsk.cam
-
-# Initialize the global variables for the Application and UserInterface objects.
-app = adsk.core.Application.get()
-ui  = app.userInterface
 
 
-def run(_context: str):
-    """This function is called by Fusion when the script is run."""
-
+def run(context):
     try:
-        # Your code goes here.
-        ui.messageBox(f'"{app.activeDocument.name}" is the active Document.')
-    except:  #pylint:disable=bare-except
-        # Write the error message to the TEXT COMMANDS window.
-        app.log(f'Failed:\n{traceback.format_exc()}')
+        if not context['IsApplicationStartup']:
+            app = adsk.core.Application.get()
+            ui = app.userInterface
+            ui.messageBox(
+                'ThreadMaker loaded. Find it under the Tools tab.',
+                'ThreadMaker',
+            )
+        commands.start()
+    except:
+        futil.handle_error('run')
+
+
+def stop(context):
+    try:
+        futil.clear_handlers()
+        commands.stop()
+    except:
+        futil.handle_error('stop')
