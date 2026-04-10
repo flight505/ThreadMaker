@@ -1,17 +1,20 @@
 #!/bin/bash
-# Deploy ThreadMaker add-in to Fusion 360
+# deploy.sh — Helper for registering ThreadMaker in Fusion 360.
+#
+# ThreadMaker is loaded directly from this Projects folder — no symlink or
+# copy in ~/Library/.../API/AddIns/ is needed. Register once via Shift+S → +
+# button and Fusion will pick up edits automatically on reload.
 
-ADDIN_DIR="$HOME/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns/ThreadMaker"
+cat <<'EOF'
+ThreadMaker does not use a deploy step.
 
-echo "Deploying ThreadMaker to: $ADDIN_DIR"
+To install (first time only):
+  1. Open Fusion 360
+  2. Shift+S → Scripts and Add-Ins
+  3. Click the "+" button
+  4. Navigate to /Users/jesper/Projects/3Dprint/ThreadMaker
+  5. Select the folder and click Open
 
-# Remove old deployment
-rm -rf "$ADDIN_DIR"
-
-# Copy everything except git, .claude, .vscode
-mkdir -p "$ADDIN_DIR"
-rsync -av --exclude='.git' --exclude='.claude' --exclude='.vscode' --exclude='.gitignore' \
-    --exclude='PLAN.md' --exclude='CLAUDE.md' --exclude='deploy.sh' --exclude='ScriptIcon.svg' \
-    "$(dirname "$0")/" "$ADDIN_DIR/"
-
-echo "Done. Restart the add-in in Fusion 360."
+After that, just edit the source in this folder. Toggle Run off/on in the
+Scripts and Add-Ins dialog to reload after changes.
+EOF

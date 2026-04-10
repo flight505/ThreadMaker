@@ -256,6 +256,38 @@ def _pair_params(inp, mf, ff):
     return male, female
 
 
+# ── Commit logging ──
+
+def _log_commit(variant: str, p: ThreadParameters) -> None:
+    """Log committed thread parameters as a single-line summary.
+
+    Format: [ThreadMaker] variant key=value key=value ...
+    Purpose: reproducibility — scroll back in Text Commands to find exact
+    params from a previous operation (e.g., to match inner threads to outer).
+    """
+    fields = [
+        f"⌀{p.major_diameter_cm*10:.1f}mm",
+        f"P={p.pitch_cm*10:g}mm",
+        f"starts={p.num_starts}",
+        f"section={p.section_size_cm*10:g}mm",
+        f"tol={p.radial_tolerance_cm*10:g}mm",
+        f"rev={p.revolutions:g}",
+        f"offset={p.offset_cm*10:g}mm",
+        f"profile={p.profile}",
+        f"start={p.start_from}",
+    ]
+    if not p.right_hand:
+        fields.append("left_hand")
+    if not p.chamfer:
+        fields.append("no_chamfer")
+    if variant.startswith("lug"):
+        fields.append(f"tabs={p.tab_count}")
+        fields.append(f"tab_h={p.tab_height_cm*10:g}mm")
+        fields.append(f"tab_d={p.tab_depth_cm*10:g}mm")
+        fields.append(f"tab_w={p.tab_width_deg:g}deg")
+    app.log(f"[ThreadMaker] {variant} " + " ".join(fields))
+
+
 # ── Execute ──
 
 def command_execute(args: adsk.core.CommandEventArgs):
@@ -277,9 +309,12 @@ def command_execute(args: adsk.core.CommandEventArgs):
                 if e: ui.messageBox("\n".join(e), CMD_NAME); return
             s1 = generator.create_thread(male, mf, design)
             s2 = generator.create_thread(female, ff, design)
-            futil.log(f"Pair: {s1} | {s2}")
             if "failed" in (s1 + s2).lower():
                 ui.messageBox(f"Male: {s1}\nFemale: {s2}", CMD_NAME)
+                return
+            _log_commit("outer", male)
+            female_variant = "lug_tabs" if female.female_style == "lug_tabs" else "inner"
+            _log_commit(female_variant, female)
         else:
             p = _single_params(inp)
             e = p.validate()
@@ -287,8 +322,11 @@ def command_execute(args: adsk.core.CommandEventArgs):
             f = _face(inp, "target_face")
             if not f: ui.messageBox("Select a face.", CMD_NAME); return
             s = generator.create_thread(p, f, design)
-            futil.log(f"Single: {s}")
-            if "failed" in s.lower(): ui.messageBox(s, CMD_NAME)
+            if "failed" in s.lower():
+                ui.messageBox(s, CMD_NAME)
+                return
+            variant = p.thread_type if p.female_style == "full_thread" else "lug_tabs"
+            _log_commit(variant, p)
     except Exception:
         import traceback; ui.messageBox(traceback.format_exc(), CMD_NAME)
 
@@ -318,7 +356,8 @@ def command_preview(args: adsk.core.CommandEventArgs):
                 generator.create_thread(p, f, design)
         args.isValidResult = True
     except Exception:
-        import traceback; app.log(f'Preview: {traceback.format_exc()}')
+        # Preview failures are non-fatal — swallow silently
+        pass
 
 
 # ── Input Changed ──
@@ -355,7 +394,8 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
                                     "female_style", "tab_height", "tab_depth", "tab_width"):
             _update_info(inp)
     except Exception:
-        import traceback; app.log(f'InputChanged: {traceback.format_exc()}')
+        # Input-change failures are non-fatal — swallow silently
+        pass
 
 
 def _update_info(inp):
