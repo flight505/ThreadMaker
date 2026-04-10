@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ThreadMaker Help</title>
+<style>
+body { font-family: -apple-system, 'Segoe UI', sans-serif; margin: 20px; color: #333; max-width: 500px; }
+h1 { font-size: 18px; margin-bottom: 4px; }
+h2 { font-size: 14px; color: #666; margin-top: 16px; }
+p, li { font-size: 13px; line-height: 1.5; }
+ul, ol { padding-left: 20px; }
+a { color: #0078d4; }
+.section { margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<h1>ThreadMaker</h1>
+<p>Creates multi-start helical threads optimized for FDM 3D printing. Supports outer bumps on a cylinder, inner ridges in a bore, or matched pair mode with lug tab support.</p>
+
+<div class="section">
+<h2>Quick Start</h2>
+<ol>
+<li>Build your jar neck and lid with a <b>gap between them</b> (0.5–1.0mm per side)</li>
+<li>Click <b>Solid &rarr; flight505 &rarr; Create Thread</b></li>
+<li>Choose <b>Matched Pair</b> and select both faces (neck outer + lid bore)</li>
+<li>Adjust pitch, starts, and section size — check the info panel</li>
+<li>Click OK</li>
+</ol>
+</div>
+
+<div class="section">
+<h2>Thread Modes</h2>
+<ul>
+<li><b>Outer (Male)</b> &mdash; thread bumps on a cylinder</li>
+<li><b>Inner (Female)</b> &mdash; thread ridges inside a bore</li>
+<li><b>Matched Pair</b> &mdash; both at once with automatic engagement calculation</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>Female Styles (Matched Pair)</h2>
+<ul>
+<li><b>Full Thread</b> &mdash; helical ridges inside the lid matching the male thread</li>
+<li><b>Lug Tabs</b> &mdash; simple curved tabs at the opening, easier to print and more tolerant</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>FDM Tips</h2>
+<ul>
+<li>Gap between neck and lid: 0.5–1.0mm per side (tutorial-proven values)</li>
+<li>Thread thickness (section): 1.5–2.5mm circular works well</li>
+<li>Use 0.12–0.16mm layer height in the thread zone</li>
+<li>Pitch 3mm × 3 starts = quick-turn jar lid (closes in ~120° rotation)</li>
+<li>Print jar upright, lid upside-down (flat surfaces on build plate)</li>
+</ul>
+</div>
+
+<p><a href="https://github.com/flight505/ThreadMaker">Documentation &amp; Source on GitHub</a></p>
+</body>
+</html>
