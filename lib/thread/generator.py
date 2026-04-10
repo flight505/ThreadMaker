@@ -133,11 +133,21 @@ def _build_helical_thread(params, frame, component, target_face):
         helix_origin.z + radial.z * helix_radius,
     )
 
+    # Cap revolutions so the thread respects end_position_cm (far-edge margin).
+    # Available axial length = face_height - offset - end_position. If the
+    # requested helix would overrun, truncate to fit. Minimum 0.1 turns.
+    available_length = frame.face_height_cm - params.offset_cm - params.end_position_cm
+    desired_length = params.helix_pitch_cm * params.helix_turns
+    if available_length > 0 and desired_length > available_length:
+        effective_turns = max(0.1, available_length / params.helix_pitch_cm)
+    else:
+        effective_turns = params.helix_turns
+
     # Create helix wire
     tmpBRep = adsk.fusion.TemporaryBRepManager.get()
     helix_wire = tmpBRep.createHelixWire(
         helix_origin, helix_axis, start_point,
-        params.helix_pitch_cm, params.helix_turns, 0.0,
+        params.helix_pitch_cm, effective_turns, 0.0,
     )
     if helix_wire is None:
         return f"{op_label}: helix creation failed"
@@ -304,6 +314,88 @@ def _build_lug_tabs(params, frame, component, target_face):
             return f"lug_tabs: pattern failed — {e}"
 
     return f"lug_tabs: {tab_count} tabs ({tab_height*10:.1f}×{tab_depth*10:.1f}mm, {tab_width:.0f}°)"
+
+
+# ── Compression rim ──
+
+def create_compression_rim(
+    target_face: adsk.fusion.BRepFace,
+    design: adsk.fusion.Design,
+    rim_height_cm: float,
+    rim_width_cm: float,
+    rim_offset_cm: float,
+    from_top: bool,
+    thread_type: str,
+) -> str:
+    """Create an axisymmetric compression rim on the opening of a cylindrical face.
+
+    Geometry:
+      - Rectangular profile on the XZ radial plane
+      - Revolved 360° around the cylinder axis as JoinFeatureOperation
+      - Outer (male) rim protrudes outward from the cylinder surface
+      - Inner (female) rim protrudes inward from the bore wall
+
+    Parameters are in cm. ``from_top`` matches the thread's ``start_from``.
+    """
+    component = design.activeComponent
+    if component is None:
+        return "rim: no active component"
+
+    frame = _frame_from_face(target_face)
+    if frame is None:
+        return "rim: face must be cylindrical"
+
+    radius_cm = frame.radius_cm
+    if thread_type == "outer":
+        inner_r = radius_cm - 0.02          # slight overlap into body
+        outer_r = radius_cm + rim_width_cm  # protrudes outward
+    else:
+        inner_r = radius_cm - rim_width_cm  # protrudes inward
+        outer_r = radius_cm + 0.02
+
+    # Rim axial band at the opening edge
+    if from_top:
+        rim_top_z = frame.top_point.z - rim_offset_cm
+        rim_bot_z = rim_top_z - rim_height_cm
+    else:
+        rim_bot_z = frame.bottom_point.z + rim_offset_cm
+        rim_top_z = rim_bot_z + rim_height_cm
+
+    target_body = target_face.body
+    sketch = component.sketches.add(component.xZConstructionPlane)
+    lines = sketch.sketchCurves.sketchLines
+
+    # XZ plane maps: sketch X → world X, sketch Y → world -Z (same as lug tabs)
+    p1 = adsk.core.Point3D.create(inner_r, -rim_bot_z, 0)
+    p2 = adsk.core.Point3D.create(outer_r, -rim_bot_z, 0)
+    p3 = adsk.core.Point3D.create(outer_r, -rim_top_z, 0)
+    p4 = adsk.core.Point3D.create(inner_r, -rim_top_z, 0)
+
+    lines.addByTwoPoints(p1, p2)
+    lines.addByTwoPoints(p2, p3)
+    lines.addByTwoPoints(p3, p4)
+    lines.addByTwoPoints(p4, p1)
+
+    if sketch.profiles.count == 0:
+        return "rim: no profile created"
+
+    revolves = component.features.revolveFeatures
+    revolve_axis = _best_construction_axis(component, frame.axis)
+    rev_input = revolves.createInput(
+        sketch.profiles.item(0),
+        revolve_axis,
+        adsk.fusion.FeatureOperations.JoinFeatureOperation,
+    )
+    rev_input.setAngleExtent(False, adsk.core.ValueInput.createByString("360 deg"))
+    if target_body:
+        rev_input.participantBodies = [target_body]
+
+    try:
+        revolves.add(rev_input)
+    except Exception as e:
+        return f"rim: revolve failed — {e}"
+
+    return f"rim: {rim_height_cm*10:.2f}×{rim_width_cm*10:.2f}mm"
 
 
 # ── Chamfer ──

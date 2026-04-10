@@ -30,6 +30,12 @@ class ThreadParameters:
     start_from: str               # "top" or "bottom"
     offset_cm: float              # distance from edge before thread starts
 
+    # Far-end clearance (v1.1): how much axial space to leave between the
+    # thread and the OPPOSITE face edge. 0 = thread may run to the base;
+    # positive = thread must stop this many cm short of the base. If the
+    # requested revolutions would overrun this margin, generator truncates.
+    end_position_cm: float = 0.0
+
     # Female style
     female_style: str = "full_thread"  # "full_thread" or "lug_tabs"
 
@@ -99,6 +105,8 @@ class ThreadParameters:
             errors.append("Start from must be 'top' or 'bottom'.")
         if self.offset_cm < 0:
             errors.append("Offset cannot be negative.")
+        if self.end_position_cm < 0:
+            errors.append("End position cannot be negative.")
         if self.female_style not in ("full_thread", "lug_tabs"):
             errors.append("Female style must be 'full_thread' or 'lug_tabs'.")
         if self.female_style == "lug_tabs":

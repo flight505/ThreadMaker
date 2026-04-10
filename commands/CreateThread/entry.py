@@ -161,6 +161,28 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     d = p.addValueInput("offset", "Offset from Edge", "mm", adsk.core.ValueInput.createByString("1.5 mm"))
     d.tooltip = "Distance from the starting edge before thread begins. 1–2mm recommended."
 
+    d = p.addValueInput("end_position", "End Clearance", "mm", adsk.core.ValueInput.createByString("0 mm"))
+    d.tooltip = "How far the thread must stay away from the FAR edge of the face. 0 = may run to the base. Positive = leaves a clearance zone between thread and base (useful for compression sealing)."
+
+    # ── Seal (Matched Pair only) ──
+    seal_group = inp.addGroupCommandInput("seal_group", "Seal")
+    seal_group.isExpanded = True; seal_group.isVisible = False
+    sgrp = seal_group.children
+
+    d = sgrp.addBoolValueInput("auto_seal", "Auto Seal", True, "", False)
+    d.tooltip = "Automatically derive thread end clearance and tab placement to create a compression seal when the lid is fully tightened. Overrides manual End Clearance and Tab Offset."
+
+    d = sgrp.addBoolValueInput("comp_rim", "Compression Rim", True, "", False)
+    d.tooltip = "Add an axisymmetric rim to the female opening. Forms a gasket-like seal against the male body when the lid is fully screwed on."
+
+    d = sgrp.addValueInput("rim_height", "Rim Height", "mm", adsk.core.ValueInput.createByString("0.6 mm"))
+    d.tooltip = "Axial height of the compression rim. 0.4–0.8mm is typical for a light press fit."
+    d.isVisible = False
+
+    d = sgrp.addValueInput("rim_width", "Rim Width", "mm", adsk.core.ValueInput.createByString("0.8 mm"))
+    d.tooltip = "Radial protrusion of the rim into the bore. Should be smaller than the bore radius and clear of the helical threads."
+    d.isVisible = False
+
     # ── Options ──
     og = inp.addGroupCommandInput("opt_group", "Options")
     og.isExpanded = False; o = og.children
@@ -227,6 +249,7 @@ def _shared(inp):
         chamfer=chamfer.value if chamfer else True,
         right_hand=_dd_name(inp, "direction") != "Left-hand",
         offset_cm=_val(inp, "offset"),
+        end_position_cm=_val(inp, "end_position"),
         female_style=female_style,
         tab_count=tabs.value if tabs else 4,
         tab_height_cm=_val(inp, "tab_height"),
@@ -249,11 +272,28 @@ def _single_params(inp):
 def _pair_params(inp, mf, ff):
     s = _shared(inp)
     sf = "top" if _dd_name(inp, "start_from") == "Top" else "bottom"
-    male = ThreadParameters(thread_type="outer", major_diameter_cm=mf.geometry.radius * 2, start_from=sf, **s)
+
+    # Auto-seal overrides: derive end_position and tab_offset from pitch so
+    # the last thread ridge meets the lug tab with a light compression fit.
+    auto_seal = _bool(inp, "auto_seal")
+    if auto_seal:
+        pitch = s["pitch_cm"]
+        s["end_position_cm"] = pitch * 0.3  # leave 30% of pitch as clearance
+        s["tab_offset_cm"] = 0.0            # tabs flush with opening edge
+
+    male_kwargs = dict(s)
+    female_kwargs = dict(s)
+
+    male = ThreadParameters(thread_type="outer", major_diameter_cm=mf.geometry.radius * 2, start_from=sf, **male_kwargs)
     # Female: use lug_tabs style if selected, opposite start direction
     female = ThreadParameters(thread_type="inner", major_diameter_cm=ff.geometry.radius * 2,
-                              start_from="bottom" if sf == "top" else "top", **s)
+                              start_from="bottom" if sf == "top" else "top", **female_kwargs)
     return male, female
+
+
+def _bool(inp, fid):
+    b = adsk.core.BoolValueCommandInput.cast(inp.itemById(fid))
+    return bool(b.value) if b else False
 
 
 # ── Commit logging ──
@@ -276,6 +316,8 @@ def _log_commit(variant: str, p: ThreadParameters) -> None:
         f"profile={p.profile}",
         f"start={p.start_from}",
     ]
+    if p.end_position_cm > 0:
+        fields.append(f"end={p.end_position_cm*10:g}mm")
     if not p.right_hand:
         fields.append("left_hand")
     if not p.chamfer:
@@ -315,6 +357,24 @@ def command_execute(args: adsk.core.CommandEventArgs):
             _log_commit("outer", male)
             female_variant = "lug_tabs" if female.female_style == "lug_tabs" else "inner"
             _log_commit(female_variant, female)
+
+            # Compression rim — adds an axisymmetric ring to the female opening
+            if _bool(inp, "comp_rim"):
+                rim_h = _val(inp, "rim_height")
+                rim_w = _val(inp, "rim_width")
+                rim_msg = generator.create_compression_rim(
+                    target_face=ff,
+                    design=design,
+                    rim_height_cm=rim_h,
+                    rim_width_cm=rim_w,
+                    rim_offset_cm=0.0,
+                    from_top=(female.start_from == "top"),
+                    thread_type="inner",
+                )
+                if "failed" in rim_msg.lower():
+                    ui.messageBox(f"Compression rim: {rim_msg}", CMD_NAME)
+                    return
+                app.log(f"[ThreadMaker] comp_rim h={rim_h*10:g}mm w={rim_w*10:g}mm on female")
         else:
             p = _single_params(inp)
             e = p.validate()
@@ -373,6 +433,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
             inp.itemById("female_face").isVisible = pair
             inp.itemById("info_group").isVisible = pair
             inp.itemById("style_group").isVisible = pair
+            inp.itemById("seal_group").isVisible = pair
             inp.itemById("preview_scope").isVisible = pair
             inp.itemById("diameter").isVisible = not pair
 
@@ -382,6 +443,21 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
                 ctrl = inp.itemById(fid)
                 if ctrl:
                     ctrl.isVisible = is_lug
+
+        if changed.id == "auto_seal":
+            on = _bool(inp, "auto_seal")
+            # When auto seal is on, end clearance and tab offset are derived — hide them
+            for fid in ("end_position", "tab_offset"):
+                ctrl = inp.itemById(fid)
+                if ctrl:
+                    ctrl.isEnabled = not on
+
+        if changed.id == "comp_rim":
+            on = _bool(inp, "comp_rim")
+            for fid in ("rim_height", "rim_width"):
+                ctrl = inp.itemById(fid)
+                if ctrl:
+                    ctrl.isVisible = on
 
         if changed.id == "target_face":
             f = _face(inp, "target_face")
